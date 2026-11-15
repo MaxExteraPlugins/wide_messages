@@ -1,0 +1,7 @@
+temp_build/
+bin/classes/
+bin/android.jar
+*.plugin
+change_versions.bat
+__pycache__/
+*.pyc
