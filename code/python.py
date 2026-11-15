@@ -131,6 +131,10 @@ class Dex:
 # ============================================================
 # MaxExteraPlugins Shared Author & Channel Subscription Module
 # ============================================================
+
+# ============================================================
+# MaxExteraPlugins Shared Author & Channel Subscription Module
+# ============================================================
 class AuthorChannelHelper:
     CONFIG_URL = "https://raw.githubusercontent.com/MaxExteraPlugins/config/main/links.json"
 
@@ -395,7 +399,27 @@ class AuthorChannelHelper:
         if isinstance(buttons_config, list):
             for btn in buttons_config:
                 if not isinstance(btn, dict): continue
-                url = str(btn.get("url") or "").strip()
+                raw_url = btn.get("url")
+                if isinstance(raw_url, dict):
+                    keys = [
+                        getattr(self.plugin, "id", None),
+                        globals().get("__id__", None),
+                        globals().get("__name__", None),
+                        self.plugin.__class__.__name__
+                    ]
+                    keys += [k.lower() for k in keys if isinstance(k, str)]
+                    resolved_url = ""
+                    for k in keys:
+                        if k and k in raw_url:
+                            resolved_url = str(raw_url[k] or "").strip()
+                            if resolved_url:
+                                break
+                    url = resolved_url
+                elif isinstance(raw_url, str):
+                    url = raw_url.strip()
+                else:
+                    url = ""
+
                 if not url: continue
 
                 title_data = btn.get("title")
