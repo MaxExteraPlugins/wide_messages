@@ -898,8 +898,11 @@ class WideMessagesPlugin(BasePlugin):
         except Exception:
             pass
 
-        def create_settings(self):
-        items = self._inner_create_settings()
+    def create_settings(self):
+        try:
+            items = self._inner_create_settings()
+        except Exception:
+            items = []
         if hasattr(self, "_author_helper"):
             return self._author_helper.prepend_settings(items)
         return items
