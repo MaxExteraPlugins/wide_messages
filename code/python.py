@@ -10,7 +10,7 @@ __id__ = "wide_messages"
 __name__ = "Wide Messages"
 __description__ = "Attempts to expand messages to fill the entire chat."
 __author__ = "@itNotMax - @MaxExteraPlugins"
-__version__ = "2.2.1"
+__version__ = "2.2.2"
 __icon__ = "MaxExteraPluginsStickers/6"
 __min_version__ = "12.10.6"
 __app_version__ = ">=12.5.1"
@@ -153,20 +153,20 @@ class AuthorChannelHelper:
     _TEXTS = {
         "install_card_title": {"ru": "Спасибо за установку!", "en": "Thank you for installing!"},
         "install_card_msg": {
-            "ru": "Надеемся, что плагин будет вам полезен!\n\nМы делаем плагины бесплатными и доступными для всех: пожалуйста, поддержите нас подпиской. Там будут только важные новости, обновления и розыгрыши.",
-            "en": "We hope this plugin will be useful to you!\n\nWe keep our plugins free and open for everyone: please support us with a subscription. We only post key news, updates, and giveaways."
+            "ru": "Надеемся, что плагин будет вам полезен!\\n\\nМы делаем плагины бесплатными и доступными для всех: пожалуйста, поддержите нас подпиской. Там будут только важные новости, обновления и розыгрыши.",
+            "en": "We hope this plugin will be useful to you!\\n\\nWe keep our plugins free and open for everyone: please support us with a subscription. We only post key news, updates, and giveaways."
         },
         "subscribe_btn": {"ru": "Подписаться", "en": "Subscribe"},
         "remind_later_btn": {"ru": "Напомнить позже", "en": "Remind later"},
         "check_sub_btn": {"ru": "Проверить подписку", "en": "Check subscription"},
         "trial_expired_title": {"ru": "Пожалуйста, подпишитесь на канал", "en": "Please subscribe to the channel"},
         "trial_expired_msg": {
-            "ru": "Пожалуйста, подпишитесь на наш официальный канал.\n\nМы делаем плагины бесплатно, ничего не требуя взамен. До подписки функции плагина временно приостановлены.",
-            "en": "Please subscribe to our official channel.\n\nWe develop plugins for free and ask nothing in return. Plugin features are paused until you subscribe."
+            "ru": "Пожалуйста, подпишитесь на наш официальный канал.\\n\\nМы делаем плагины бесплатно, ничего не требуя взамен. До подписки функции плагина временно приостановлены.",
+            "en": "Please subscribe to our official channel.\\n\\nWe develop plugins for free and ask nothing in return. Plugin features are paused until you subscribe."
         },
         "sub_thank_you": {"ru": "Спасибо за подписку на наш канал!", "en": "Thank you for subscribing to our channel!"},
-        "sub_thank_you_after_expired": {"ru": "Спасибо за подписку на наш канал!\nПлагин продолжит работу!", "en": "Thank you for subscribing to our channel!\nThe plugin will continue working!"},
-        "sub_not_found": {"ru": "Подписка не обнаружена. Пожалуйста, подпишитесь на канал.", "en": "Subscription not found. Please subscribe to the channel."},
+        "sub_thank_you_after_expired": {"ru": "Спасибо за подписку на наш канал!\\nПлагин продолжит работу!", "en": "Thank you for subscribing to our channel!\\nThe plugin will continue working!"},
+        "sub_not_found": {"ru": "Подписка не обнаружена ни на одном из аккаунтов. Пожалуйста, подпишитесь на канал.", "en": "Subscription not found on any account. Please subscribe to the channel."},
         "settings_channel": {"ru": "Канал автора", "en": "Author's Channel"},
         "settings_donate": {"ru": "Поддержать автора", "en": "Support author"},
         "settings_bug_report": {"ru": "Сообщить о баге", "en": "Report a bug"}
@@ -176,18 +176,10 @@ class AuthorChannelHelper:
     def is_ru(cls) -> bool:
         try:
             from org.telegram.messenger import LocaleController
-            cur = str(LocaleController.getInstance().getCurrentLocale().getLanguage() or "").lower()
-            if cur.startswith(("ru", "uk", "be")): return True
-            if cur: return False
+            lang = str(LocaleController.getInstance().getCurrentLocale().getLanguage() or "").lower()
+            return lang in ("ru", "be", "uk", "kk")
         except Exception:
-            pass
-        try:
-            from java.util import Locale
-            code = str(Locale.getDefault().getLanguage() or "").lower()
-            if code.startswith(("ru", "uk", "be")): return True
-        except Exception:
-            pass
-        return False
+            return True
 
     @classmethod
     def tr(cls, key: str) -> str:
@@ -283,7 +275,12 @@ class AuthorChannelHelper:
                     if error is None and response is not None:
                         chats = getattr(response, "chats", None)
                         if chats is not None and chats.size() > 0:
-                            mc.putChats(chats, False)
+                            for a in range(UserConfig.MAX_ACCOUNT_COUNT):
+                                try:
+                                    if UserConfig.getInstance(a).isClientActivated():
+                                        MessagesController.getInstance(a).putChats(chats, False)
+                                except Exception:
+                                    pass
                             c = chats.get(0)
                             cid = getattr(c, "id", 0)
                             if cid > 0:
@@ -294,59 +291,140 @@ class AuthorChannelHelper:
 
     def is_subscribed(self) -> bool:
         try:
-            from org.telegram.messenger import UserConfig, MessagesController
+            from org.telegram.messenger import UserConfig, MessagesController, MessagesStorage
+            from java.lang import Long as JLong
             links = self._get_links()
             target = str(links.get("channel_username", "MaxExteraPlugins") or "MaxExteraPlugins").lower().lstrip("@")
-            saved_cid = self.plugin.get_setting("resolved_channel_id", 0)
+            saved_cid = int(self.plugin.get_setting("resolved_channel_id", 0) or 0)
 
             for acc in range(UserConfig.MAX_ACCOUNT_COUNT):
-                uconf = UserConfig.getInstance(acc)
-                if not uconf.isClientActivated(): continue
-                mc = MessagesController.getInstance(acc)
-                if not mc: continue
-
-                if saved_cid:
-                    try:
-                        from java.lang import Long as JLong
-                        c = mc.getChat(JLong(int(saved_cid)))
-                        if c is not None:
-                            left = bool(getattr(c, "left", True))
-                            kicked = bool(getattr(c, "kicked", False))
-                            if not left and not kicked: return True
-                    except Exception:
-                        pass
-
                 try:
-                    chat = mc.getUserOrChat(target)
-                    if chat is not None:
-                        cid = getattr(chat, "id", 0)
-                        if cid and not saved_cid:
-                            self.plugin.set_setting("resolved_channel_id", int(cid))
-                        left = bool(getattr(chat, "left", True))
-                        kicked = bool(getattr(chat, "kicked", False))
-                        if not left and not kicked: return True
-                except Exception:
-                    pass
+                    uconf = UserConfig.getInstance(acc)
+                    if not uconf.isClientActivated():
+                        continue
 
-                try:
-                    dialogs = mc.allDialogs
-                    if dialogs is not None:
-                        limit = min(dialogs.size(), 300)
-                        for i in range(limit):
-                            d = dialogs.get(i)
-                            did = getattr(d, "id", 0)
-                            if did < 0:
-                                from java.lang import Long as JLong
-                                c = mc.getChat(JLong(-did))
-                                if c is not None:
-                                    uname = str(getattr(c, "username", "") or "").lower()
-                                    if uname == target:
-                                        cid = getattr(c, "id", 0)
-                                        if cid and not saved_cid:
-                                            self.plugin.set_setting("resolved_channel_id", int(cid))
-                                        left = bool(getattr(c, "left", True))
-                                        kicked = bool(getattr(c, "kicked", False))
-                                        if not left and not kicked: return True
+                    mc = MessagesController.getInstance(acc)
+                    storage = MessagesStorage.getInstance(acc)
+
+                    # 1. In-memory check by resolved_channel_id
+                    if saved_cid and mc is not None:
+                        try:
+                            c = mc.getChat(JLong(saved_cid))
+                            if c is not None:
+                                left = bool(getattr(c, "left", True))
+                                kicked = bool(getattr(c, "kicked", False))
+                                if not left and not kicked:
+                                    return True
+                        except Exception:
+                            pass
+
+                    # 2. In-memory check by username
+                    if mc is not None:
+                        try:
+                            chat = mc.getUserOrChat(target)
+                            if chat is not None:
+                                cid = int(getattr(chat, "id", 0) or 0)
+                                if cid and not saved_cid:
+                                    saved_cid = cid
+                                    self.plugin.set_setting("resolved_channel_id", cid)
+                                left = bool(getattr(chat, "left", True))
+                                kicked = bool(getattr(chat, "kicked", False))
+                                if not left and not kicked:
+                                    return True
+                        except Exception:
+                            pass
+
+                    # 3. In-memory dialogs check
+                    if mc is not None:
+                        try:
+                            dialog_lists = []
+                            d_chan = getattr(mc, "dialogsChannelsOnly", None)
+                            if d_chan is not None and d_chan.size() > 0:
+                                dialog_lists.append(d_chan)
+                            d_all = getattr(mc, "allDialogs", None)
+                            if d_all is not None and d_all.size() > 0:
+                                dialog_lists.append(d_all)
+
+                            for d_list in dialog_lists:
+                                limit = min(d_list.size(), 300)
+                                for i in range(limit):
+                                    d = d_list.get(i)
+                                    did = getattr(d, "id", 0)
+                                    if did < 0:
+                                        cid = -did
+                                        if saved_cid and cid == saved_cid:
+                                            c = mc.getChat(JLong(cid))
+                                            if c is not None:
+                                                left = bool(getattr(c, "left", True))
+                                                kicked = bool(getattr(c, "kicked", False))
+                                                if not left and not kicked:
+                                                    return True
+                                        else:
+                                            c = mc.getChat(JLong(cid))
+                                            if c is not None:
+                                                uname = str(getattr(c, "username", "") or "").lower()
+                                                if uname == target:
+                                                    if not saved_cid:
+                                                        saved_cid = cid
+                                                        self.plugin.set_setting("resolved_channel_id", cid)
+                                                    left = bool(getattr(c, "left", True))
+                                                    kicked = bool(getattr(c, "kicked", False))
+                                                    if not left and not kicked:
+                                                        return True
+                        except Exception:
+                            pass
+
+                    # 4. Storage check (SQLite on disk)
+                    if storage is not None:
+                        if saved_cid:
+                            try:
+                                if storage.containsLocalDialog(JLong(-saved_cid)):
+                                    c_sync = storage.getChatSync(JLong(saved_cid))
+                                    if c_sync is not None:
+                                        left = bool(getattr(c_sync, "left", True))
+                                        kicked = bool(getattr(c_sync, "kicked", False))
+                                        if not left and not kicked:
+                                            return True
+                                    else:
+                                        return True
+                            except Exception:
+                                pass
+
+                        try:
+                            db = storage.getDatabase()
+                            if db is not None:
+                                if saved_cid:
+                                    try:
+                                        cur = db.queryFinalized("SELECT did FROM dialogs WHERE did = ?", [JLong(-saved_cid)])
+                                        if cur is not None:
+                                            has_row = bool(cur.next())
+                                            cur.dispose()
+                                            if has_row:
+                                                return True
+                                    except Exception:
+                                        pass
+
+                                try:
+                                    cur = db.queryFinalized("SELECT uid, name FROM chats WHERE LOWER(name) LIKE ?", ["%" + target + "%"])
+                                    if cur is not None:
+                                        while cur.next():
+                                            c_id = cur.longValue(0)
+                                            if c_id > 0:
+                                                if not saved_cid:
+                                                    saved_cid = int(c_id)
+                                                    self.plugin.set_setting("resolved_channel_id", saved_cid)
+                                                cur_d = db.queryFinalized("SELECT did FROM dialogs WHERE did = ?", [JLong(-c_id)])
+                                                if cur_d is not None:
+                                                    in_dlg = bool(cur_d.next())
+                                                    cur_d.dispose()
+                                                    if in_dlg:
+                                                        cur.dispose()
+                                                        return True
+                                        cur.dispose()
+                                except Exception:
+                                    pass
+                        except Exception:
+                            pass
                 except Exception:
                     pass
         except Exception:
@@ -355,19 +433,15 @@ class AuthorChannelHelper:
 
     def is_allowed(self) -> bool:
         import time
-        if self.is_subscribed():
-            if not self.plugin.get_setting("was_subscribed", False):
-                was_exp = bool(self.plugin.get_setting("was_expired_state", False))
-                self.plugin.set_setting("was_subscribed", True)
-                self.plugin.set_setting("was_expired_state", False)
-                self._notify_subscribed(was_expired=was_exp)
+        if self.plugin.get_setting("was_subscribed", False):
             return True
 
-        if self.plugin.get_setting("was_expired_state", False) or self.plugin.get_setting("was_subscribed", False):
-            self.plugin.set_setting("was_subscribed", False)
-            self.plugin.set_setting("was_expired_state", True)
-            self._show_expired_card()
-            return False
+        if self.is_subscribed():
+            was_exp = bool(self.plugin.get_setting("was_expired_state", False))
+            self.plugin.set_setting("was_subscribed", True)
+            self.plugin.set_setting("was_expired_state", False)
+            self._notify_subscribed(was_expired=was_exp)
+            return True
 
         now = time.time()
         install_time = float(self.plugin.get_setting("install_time", 0.0) or 0.0)
@@ -382,13 +456,11 @@ class AuthorChannelHelper:
             return True
 
         self.plugin.set_setting("was_expired_state", True)
-        self._show_expired_card()
         return False
 
     def prepend_settings(self, original_items=None) -> list:
         from ui.settings import Header, Text, Divider
 
-        # Prevent double-prepending
         if original_items and any(getattr(x, "text", "") == "MaxExteraPlugins" for x in original_items if type(x).__name__ == "Header"):
             return original_items
 
@@ -458,7 +530,6 @@ class AuthorChannelHelper:
             res.extend(author_items)
             res.append(Divider())
 
-        # Clean original_items by removing any old "Информация" / "Information" category
         cleaned_items = []
         if original_items:
             skipping_info = False
@@ -499,30 +570,20 @@ class AuthorChannelHelper:
 
     def _notify_subscribed(self, was_expired=False):
         self.plugin.set_setting("was_subscribed", True)
+        self.plugin.set_setting("was_expired_state", False)
         from ui.bulletin import BulletinHelper
         msg_key = "sub_thank_you_after_expired" if was_expired else "sub_thank_you"
         BulletinHelper.show_success(self.tr(msg_key))
 
     def _check_subscription_change_instant(self):
         try:
-            from android_utils import run_on_ui_thread
-            cur_sub = self.is_subscribed()
-            prev_sub = self._last_known_sub
-            if prev_sub is not None and prev_sub != cur_sub:
-                self._last_known_sub = cur_sub
-                if cur_sub:
+            if not self.plugin.get_setting("was_subscribed", False):
+                if self.is_subscribed():
                     was_exp = bool(self.plugin.get_setting("was_expired_state", False))
                     self.plugin.set_setting("was_subscribed", True)
                     self.plugin.set_setting("was_expired_state", False)
                     self._dismiss_active_dialog()
                     self._notify_subscribed(was_expired=was_exp)
-                else:
-                    self.plugin.set_setting("was_subscribed", False)
-                    self.plugin.set_setting("was_expired_state", True)
-                    self._dismiss_active_dialog()
-                    self._show_expired_card()
-            else:
-                self._last_known_sub = cur_sub
         except Exception:
             pass
 
@@ -530,36 +591,25 @@ class AuthorChannelHelper:
         def watcher_loop():
             import time
             from android_utils import run_on_ui_thread
-            time.sleep(2.0)
+            time.sleep(5.0)
             if self._stopped: return
-            self._last_known_sub = self.is_subscribed()
 
             while not self._stopped:
                 try:
-                    time.sleep(2.0)
+                    time.sleep(30.0)
                     if self._stopped: break
-                    cur_sub = self.is_subscribed()
-                    prev_sub = self._last_known_sub
 
-                    if prev_sub is not None and prev_sub != cur_sub:
-                        self._last_known_sub = cur_sub
-                        if cur_sub:
-                            was_exp = bool(self.plugin.get_setting("was_expired_state", False))
-                            self.plugin.set_setting("was_subscribed", True)
-                            self.plugin.set_setting("was_expired_state", False)
-                            def on_sub():
-                                self._dismiss_active_dialog()
-                                self._notify_subscribed(was_expired=was_exp)
-                            run_on_ui_thread(on_sub)
-                        else:
-                            self.plugin.set_setting("was_subscribed", False)
-                            self.plugin.set_setting("was_expired_state", True)
-                            def on_unsub():
-                                self._dismiss_active_dialog()
-                                self._show_expired_card()
-                            run_on_ui_thread(on_unsub)
-                    else:
-                        self._last_known_sub = cur_sub
+                    if self.plugin.get_setting("was_subscribed", False):
+                        continue
+
+                    if self.is_subscribed():
+                        was_exp = bool(self.plugin.get_setting("was_expired_state", False))
+                        self.plugin.set_setting("was_subscribed", True)
+                        self.plugin.set_setting("was_expired_state", False)
+                        def on_sub():
+                            self._dismiss_active_dialog()
+                            self._notify_subscribed(was_expired=was_exp)
+                        run_on_ui_thread(on_sub)
                 except Exception:
                     pass
         import threading
@@ -576,30 +626,24 @@ class AuthorChannelHelper:
                     install_time = now
                     self.plugin.set_setting("install_time", install_time)
 
-                is_sub = self.is_subscribed()
-                self._last_known_sub = is_sub
-                was_sub = bool(self.plugin.get_setting("was_subscribed", False))
-                was_exp = bool(self.plugin.get_setting("was_expired_state", False))
-
-                if is_sub:
-                    if not was_sub:
-                        self.plugin.set_setting("was_subscribed", True)
-                        self.plugin.set_setting("was_expired_state", False)
-                        self._notify_subscribed(was_expired=was_exp)
+                if self.is_subscribed():
+                    was_exp = bool(self.plugin.get_setting("was_expired_state", False))
+                    self.plugin.set_setting("was_subscribed", True)
+                    self.plugin.set_setting("was_expired_state", False)
+                    if was_exp:
+                        self._notify_subscribed(was_expired=True)
                     return
 
-                if was_sub or was_exp:
-                    self.plugin.set_setting("was_subscribed", False)
-                    self.plugin.set_setting("was_expired_state", True)
-                    self._show_expired_card()
+                if self.plugin.get_setting("was_subscribed", False):
                     return
 
                 trial_days = float(self._get_links().get("trial_days", 7))
                 trial_sec = trial_days * 86400.0
-                last_remind = float(self.plugin.get_setting("last_remind_time", 0.0) or 0.0)
 
                 if (now - install_time) < trial_sec:
-                    if last_remind <= 0 or (now - last_remind) >= trial_sec:
+                    welcome_shown = bool(self.plugin.get_setting("welcome_shown", False))
+                    if not welcome_shown:
+                        self.plugin.set_setting("welcome_shown", True)
                         self._show_welcome_card()
                 else:
                     self.plugin.set_setting("was_expired_state", True)
@@ -611,49 +655,44 @@ class AuthorChannelHelper:
 
     def _create_card_content(self, act, title_text, message_text):
         try:
-            from android.widget import LinearLayout, TextView
+            from android.widget import LinearLayout, TextView, ImageView
             from android.view import Gravity
-            from android.graphics import Typeface
-            from org.telegram.messenger import AndroidUtilities, UserConfig, MediaDataController
+            from org.telegram.messenger import AndroidUtilities
             from org.telegram.ui.ActionBar import Theme
-            from org.telegram.ui.Components import BackupImageView
+            from client_utils import create_sticker_drawable
 
             dp = AndroidUtilities.dp
+
             layout = LinearLayout(act)
             layout.setOrientation(LinearLayout.VERTICAL)
             layout.setGravity(Gravity.CENTER_HORIZONTAL)
-            layout.setPadding(dp(24), dp(16), dp(24), dp(6))
+            layout.setPadding(dp(24), dp(20), dp(24), dp(10))
 
-            size = dp(76)
-            iv = BackupImageView(act)
-            iv.setRoundRadius(dp(18))
-            lp_iv = LinearLayout.LayoutParams(size, size)
-            lp_iv.gravity = Gravity.CENTER_HORIZONTAL
-            lp_iv.setMargins(0, dp(4), 0, dp(16))
-            iv.setLayoutParams(lp_iv)
+            sticker_drawable = None
+            if self.icon_sticker:
+                try:
+                    sticker_drawable = create_sticker_drawable(self.icon_sticker, dp(120), dp(120))
+                except Exception:
+                    pass
 
-            try:
-                acc = int(UserConfig.selectedAccount)
-                mdc = MediaDataController.getInstance(acc)
-                raw_icon = str(self.icon_sticker)
-                if "/" in raw_icon:
-                    pack, idx_s = raw_icon.split("/", 1)
-                    mdc.setPlaceholderImageByIndex(iv, pack, int(idx_s), "150_150")
-            except Exception:
-                pass
-            layout.addView(iv)
+            if sticker_drawable is not None:
+                iv = ImageView(act)
+                iv.setImageDrawable(sticker_drawable)
+                lp_iv = LinearLayout.LayoutParams(dp(120), dp(120))
+                lp_iv.gravity = Gravity.CENTER_HORIZONTAL
+                lp_iv.bottomMargin = dp(14)
+                layout.addView(iv, lp_iv)
 
             if title_text:
                 tt = TextView(act)
                 tt.setText(title_text)
                 tt.setTextSize(19.0)
-                tt.setTypeface(None, Typeface.BOLD)
+                tt.setTypeface(AndroidUtilities.bold())
                 tt.setTextColor(Theme.getColor(Theme.key_dialogTextBlack))
                 tt.setGravity(Gravity.CENTER_HORIZONTAL)
                 lp_t = LinearLayout.LayoutParams(-1, -2)
-                lp_t.setMargins(0, 0, 0, dp(12))
-                tt.setLayoutParams(lp_t)
-                layout.addView(tt)
+                lp_t.bottomMargin = dp(8)
+                layout.addView(tt, lp_t)
 
             if message_text:
                 mt = TextView(act)
@@ -766,8 +805,6 @@ class AuthorChannelHelper:
                 pass
         from android_utils import run_on_ui_thread
         run_on_ui_thread(show)
-
-
 class WideMessagesPlugin(BasePlugin):
     def on_app_event(self, event_type):
         if hasattr(self, "_author_helper"):
