@@ -10,7 +10,7 @@ __id__ = "wide_messages"
 __name__ = "Wide Messages"
 __description__ = "Attempts to expand messages to fill the entire chat."
 __author__ = "@itNotMax - @MaxExteraPlugins"
-__version__ = "2.2.2"
+__version__ = "2.2.3"
 __icon__ = "MaxExteraPluginsStickers/6"
 __min_version__ = "12.10.6"
 __app_version__ = ">=12.5.1"
@@ -141,7 +141,6 @@ class AuthorChannelHelper:
     DEFAULT_LINKS = {
         "channel_username": "MaxExteraPlugins",
         "channel_url": "https://t.me/MaxExteraPlugins",
-        "trial_days": 7,
         "header": {"ru": "MaxExteraPlugins", "en": "MaxExteraPlugins"},
         "buttons": [
             {"title": {"ru": "Канал автора", "en": "Author's Channel"}, "icon": "msg_channel", "url": "https://t.me/MaxExteraPlugins"},
@@ -151,22 +150,23 @@ class AuthorChannelHelper:
     }
 
     _TEXTS = {
-        "install_card_title": {"ru": "Спасибо за установку!", "en": "Thank you for installing!"},
+        "install_card_title": {"ru": "Подпишитесь на канал", "en": "Subscribe to channel"},
         "install_card_msg": {
-            "ru": "Надеемся, что плагин будет вам полезен!\\n\\nМы делаем плагины бесплатными и доступными для всех: пожалуйста, поддержите нас подпиской. Там будут только важные новости, обновления и розыгрыши.",
-            "en": "We hope this plugin will be useful to you!\\n\\nWe keep our plugins free and open for everyone: please support us with a subscription. We only post key news, updates, and giveaways."
+            "ru": (
+                "Мы делаем плагины бесплатными и доступными для всех: пожалуйста, "
+                "поддержите нас подпиской на официальный канал @MaxExteraPlugins.\n\n"
+                "Там публикуются обновления, важные новости и анонсы новых плагинов."
+            ),
+            "en": (
+                "We keep our plugins free and accessible for everyone: please "
+                "support us by subscribing to our official channel @MaxExteraPlugins.\n\n"
+                "Updates, news, and new plugin announcements are published there."
+            )
         },
-        "subscribe_btn": {"ru": "Подписаться", "en": "Subscribe"},
+        "open_channel_btn": {"ru": "Перейти на канал", "en": "Open channel"},
         "remind_later_btn": {"ru": "Напомнить позже", "en": "Remind later"},
-        "check_sub_btn": {"ru": "Проверить подписку", "en": "Check subscription"},
-        "trial_expired_title": {"ru": "Пожалуйста, подпишитесь на канал", "en": "Please subscribe to the channel"},
-        "trial_expired_msg": {
-            "ru": "Пожалуйста, подпишитесь на наш официальный канал.\\n\\nМы делаем плагины бесплатно, ничего не требуя взамен. До подписки функции плагина временно приостановлены.",
-            "en": "Please subscribe to our official channel.\\n\\nWe develop plugins for free and ask nothing in return. Plugin features are paused until you subscribe."
-        },
+        "never_show_btn": {"ru": "Больше не показывать", "en": "Don't show again"},
         "sub_thank_you": {"ru": "Спасибо за подписку на наш канал!", "en": "Thank you for subscribing to our channel!"},
-        "sub_thank_you_after_expired": {"ru": "Спасибо за подписку на наш канал!\\nПлагин продолжит работу!", "en": "Thank you for subscribing to our channel!\\nThe plugin will continue working!"},
-        "sub_not_found": {"ru": "Подписка не обнаружена ни на одном из аккаунтов. Пожалуйста, подпишитесь на канал.", "en": "Subscription not found on any account. Please subscribe to the channel."},
         "settings_channel": {"ru": "Канал автора", "en": "Author's Channel"},
         "settings_donate": {"ru": "Поддержать автора", "en": "Support author"},
         "settings_bug_report": {"ru": "Сообщить о баге", "en": "Report a bug"}
@@ -191,27 +191,30 @@ class AuthorChannelHelper:
         self.icon_sticker = icon_sticker or getattr(plugin, "__icon__", "MaxExteraPluginsStickers/1")
         self._stopped = False
         self._active_dialog = None
-        self._last_known_sub = None
 
     def on_load(self):
         self._stopped = False
         self._active_dialog = None
-        self._last_known_sub = None
         self._load_remote_links_async()
         self._check_initial_subscription_flow()
-        self._start_subscription_watcher()
 
     def on_event(self, event_type):
         try:
             name = str(event_type).upper()
             if name.endswith("START") or name.endswith("RESUME"):
-                self._check_subscription_change_instant()
+                if self.is_subscribed() and not self.plugin.get_setting("was_subscribed", False):
+                    self.plugin.set_setting("was_subscribed", True)
+                    self._dismiss_active_dialog()
+                    self._notify_subscribed()
         except Exception:
             pass
 
     def on_unload(self):
         self._stopped = True
         self._dismiss_active_dialog()
+
+    def is_allowed(self) -> bool:
+        return True
 
     def _get_links(self) -> dict:
         raw = self.plugin.get_setting("remote_links_cache", None)
@@ -431,33 +434,6 @@ class AuthorChannelHelper:
             pass
         return False
 
-    def is_allowed(self) -> bool:
-        import time
-        if self.plugin.get_setting("was_subscribed", False):
-            return True
-
-        if self.is_subscribed():
-            was_exp = bool(self.plugin.get_setting("was_expired_state", False))
-            self.plugin.set_setting("was_subscribed", True)
-            self.plugin.set_setting("was_expired_state", False)
-            self._notify_subscribed(was_expired=was_exp)
-            return True
-
-        now = time.time()
-        install_time = float(self.plugin.get_setting("install_time", 0.0) or 0.0)
-        if install_time <= 0:
-            install_time = now
-            self.plugin.set_setting("install_time", install_time)
-
-        trial_days = float(self._get_links().get("trial_days", 7))
-        trial_sec = trial_days * 86400.0
-
-        if (now - install_time) < trial_sec:
-            return True
-
-        self.plugin.set_setting("was_expired_state", True)
-        return False
-
     def prepend_settings(self, original_items=None) -> list:
         from ui.settings import Header, Text, Divider
 
@@ -568,86 +544,32 @@ class AuthorChannelHelper:
             pass
         return False
 
-    def _notify_subscribed(self, was_expired=False):
-        self.plugin.set_setting("was_subscribed", True)
-        self.plugin.set_setting("was_expired_state", False)
-        from ui.bulletin import BulletinHelper
-        msg_key = "sub_thank_you_after_expired" if was_expired else "sub_thank_you"
-        BulletinHelper.show_success(self.tr(msg_key))
-
-    def _check_subscription_change_instant(self):
+    def _notify_subscribed(self):
         try:
-            if not self.plugin.get_setting("was_subscribed", False):
-                if self.is_subscribed():
-                    was_exp = bool(self.plugin.get_setting("was_expired_state", False))
-                    self.plugin.set_setting("was_subscribed", True)
-                    self.plugin.set_setting("was_expired_state", False)
-                    self._dismiss_active_dialog()
-                    self._notify_subscribed(was_expired=was_exp)
+            from ui.bulletin import BulletinHelper
+            BulletinHelper.show_success(self.tr("sub_thank_you"))
         except Exception:
             pass
 
-    def _start_subscription_watcher(self):
-        def watcher_loop():
-            import time
-            from android_utils import run_on_ui_thread
-            time.sleep(5.0)
-            if self._stopped: return
-
-            while not self._stopped:
-                try:
-                    time.sleep(30.0)
-                    if self._stopped: break
-
-                    if self.plugin.get_setting("was_subscribed", False):
-                        continue
-
-                    if self.is_subscribed():
-                        was_exp = bool(self.plugin.get_setting("was_expired_state", False))
-                        self.plugin.set_setting("was_subscribed", True)
-                        self.plugin.set_setting("was_expired_state", False)
-                        def on_sub():
-                            self._dismiss_active_dialog()
-                            self._notify_subscribed(was_expired=was_exp)
-                        run_on_ui_thread(on_sub)
-                except Exception:
-                    pass
-        import threading
-        t = threading.Thread(target=watcher_loop, daemon=True)
-        t.start()
-
     def _check_initial_subscription_flow(self):
         def flow():
-            import time
             try:
-                now = time.time()
-                install_time = float(self.plugin.get_setting("install_time", 0.0) or 0.0)
-                if install_time <= 0:
-                    install_time = now
-                    self.plugin.set_setting("install_time", install_time)
+                if self.plugin.get_setting("never_show_sub_prompt", False):
+                    return
+
+                current_ver = str(getattr(self.plugin, "__version__", globals().get("__version__", "1.0.0")) or "1.0.0")
+                last_prompted_ver = self.plugin.get_setting("last_prompted_version", None)
+
+                # Only show on install (last_prompted_ver is None) or update (last_prompted_ver != current_ver)
+                if last_prompted_ver is not None and str(last_prompted_ver) == current_ver:
+                    return
 
                 if self.is_subscribed():
-                    was_exp = bool(self.plugin.get_setting("was_expired_state", False))
+                    self.plugin.set_setting("last_prompted_version", current_ver)
                     self.plugin.set_setting("was_subscribed", True)
-                    self.plugin.set_setting("was_expired_state", False)
-                    if was_exp:
-                        self._notify_subscribed(was_expired=True)
                     return
 
-                if self.plugin.get_setting("was_subscribed", False):
-                    return
-
-                trial_days = float(self._get_links().get("trial_days", 7))
-                trial_sec = trial_days * 86400.0
-
-                if (now - install_time) < trial_sec:
-                    welcome_shown = bool(self.plugin.get_setting("welcome_shown", False))
-                    if not welcome_shown:
-                        self.plugin.set_setting("welcome_shown", True)
-                        self._show_welcome_card()
-                else:
-                    self.plugin.set_setting("was_expired_state", True)
-                    self._show_expired_card()
+                self._show_subscription_prompt(current_ver)
             except Exception:
                 pass
         from android_utils import run_on_ui_thread
@@ -709,7 +631,7 @@ class AuthorChannelHelper:
         except Exception:
             return None
 
-    def _show_welcome_card(self):
+    def _show_subscription_prompt(self, current_ver: str):
         def show():
             try:
                 if self._is_dialog_active(): return
@@ -731,80 +653,38 @@ class AuthorChannelHelper:
                     b.set_title(self.tr("install_card_title"))
                     b.set_message(self.tr("install_card_msg"))
 
-                def on_sub(d, w):
+                def on_open_channel(dialog, which):
                     self._dismiss_active_dialog()
+                    self.plugin.set_setting("last_prompted_version", current_ver)
                     self._open_url(url)
-                    def check_after():
-                        if self.is_subscribed():
-                            self._notify_subscribed(was_expired=False)
-                    from android_utils import run_on_ui_thread
-                    run_on_ui_thread(check_after, 3000)
 
-                def on_later(d, w):
-                    import time
+                def on_remind_later(dialog, which):
                     self._dismiss_active_dialog()
-                    self.plugin.set_setting("last_remind_time", time.time())
+                    self.plugin.set_setting("last_prompted_version", current_ver)
 
-                b.set_positive_button(self.tr("subscribe_btn"), on_sub)
-                b.set_negative_button(self.tr("remind_later_btn"), on_later)
+                def on_never_show(dialog, which):
+                    self._dismiss_active_dialog()
+                    self.plugin.set_setting("never_show_sub_prompt", True)
+                    self.plugin.set_setting("last_prompted_version", current_ver)
+
+                b.set_positive_button(self.tr("open_channel_btn"), on_open_channel)
+                b.set_neutral_button(self.tr("remind_later_btn"), on_remind_later)
+                b.set_negative_button(self.tr("never_show_btn"), on_never_show)
+
+                def on_dismiss(builder):
+                    self.plugin.set_setting("last_prompted_version", current_ver)
+                try:
+                    b.set_on_dismiss_listener(on_dismiss)
+                except Exception:
+                    pass
+
                 self._active_dialog = b.show()
+                self.plugin.set_setting("last_prompted_version", current_ver)
             except Exception:
                 pass
         from android_utils import run_on_ui_thread
         run_on_ui_thread(show)
 
-    def _show_expired_card(self):
-        def show():
-            try:
-                if self._is_dialog_active(): return
-                from client_utils import get_last_fragment
-                frag = get_last_fragment()
-                if not frag: return
-                act = frag.getParentActivity()
-                if not act: return
-
-                links = self._get_links()
-                url = links.get("channel_url", "https://t.me/MaxExteraPlugins")
-
-                from ui.alert import AlertDialogBuilder
-                from ui.bulletin import BulletinHelper
-                b = AlertDialogBuilder(act)
-                content = self._create_card_content(act, self.tr("trial_expired_title"), self.tr("trial_expired_msg"))
-                if content is not None:
-                    b.set_view(content)
-                else:
-                    b.set_title(self.tr("trial_expired_title"))
-                    b.set_message(self.tr("trial_expired_msg"))
-
-                def on_sub(d, w):
-                    self._dismiss_active_dialog()
-                    self._open_url(url)
-                    def check_after():
-                        if self.is_subscribed():
-                            self.plugin.set_setting("was_subscribed", True)
-                            self.plugin.set_setting("was_expired_state", False)
-                            self._notify_subscribed(was_expired=True)
-                    from android_utils import run_on_ui_thread
-                    run_on_ui_thread(check_after, 3000)
-
-                def on_check(d, w):
-                    self._dismiss_active_dialog()
-                    if self.is_subscribed():
-                        self.plugin.set_setting("was_subscribed", True)
-                        self.plugin.set_setting("was_expired_state", False)
-                        self._notify_subscribed(was_expired=True)
-                    else:
-                        BulletinHelper.show_error(self.tr("sub_not_found"))
-                        from android_utils import run_on_ui_thread
-                        run_on_ui_thread(self._show_expired_card, 500)
-
-                b.set_positive_button(self.tr("subscribe_btn"), on_sub)
-                b.set_negative_button(self.tr("check_sub_btn"), on_check)
-                self._active_dialog = b.show()
-            except Exception:
-                pass
-        from android_utils import run_on_ui_thread
-        run_on_ui_thread(show)
 class WideMessagesPlugin(BasePlugin):
     def on_app_event(self, event_type):
         if hasattr(self, "_author_helper"):
